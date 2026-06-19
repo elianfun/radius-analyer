@@ -4,6 +4,7 @@ FreeRADIUS + daloRADIUS 的自訂 Web 管理介面，用於分析設備使用狀
 
 ## 功能
 
+- **首頁複寫狀態列**：即時顯示雙主 MariaDB 複寫健康狀態，包含 IO/SQL Thread、複寫延遲、同步差距交叉比對（本機作為主機 vs 對方已讀位置），支援手動重新整理
 - **閒置設備**：列出 N 天內未成功認證的設備，支援批次刪除
 - **從未認證**：列出從未通過認證的設備，支援一鍵全部刪除
 - **已停用設備**：列出 daloRADIUS-Disabled-Users 群組的設備
@@ -20,6 +21,7 @@ FreeRADIUS + daloRADIUS 的自訂 Web 管理介面，用於分析設備使用狀
 - Python 3.10+
 - FreeRADIUS + daloRADIUS（MariaDB 後端）
 - 資料來源：`radpostauth`（認證日誌）、`radcheck`、`userinfo`、`radusergroup`
+- 複寫狀態功能需要能 SSH 進兩台 DB 主機（root 帳號）
 
 ## 安裝
 
@@ -42,6 +44,13 @@ DB_USER=radius
 DB_PASSWORD=your_password
 DB_NAME=radius
 INACTIVE_DAYS=90
+
+# 複寫狀態功能（SSH 進 DB 主機執行 SHOW SLAVE/MASTER STATUS）
+SSH_HOST_1=192.168.50.22
+SSH_HOST_2=192.168.50.23
+SSH_USER=root
+SSH_PASSWORD=your_ssh_password
+DB_ROOT_PASSWORD=your_db_root_password
 ```
 
 ## 啟動
@@ -59,6 +68,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8002
 | FastAPI | Web 框架 |
 | Jinja2 | HTML 模板 |
 | SQLAlchemy + PyMySQL | 資料庫連線 |
+| Paramiko | SSH 連線（複寫狀態查詢） |
 | Chart.js | 圖表 |
 
 ## 資料庫索引

@@ -2,6 +2,15 @@
 {% block content %}
 <h1>RADIUS MAB 管理系統</h1>
 
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+  <h2 style="margin:0;font-size:1rem;color:#888;font-weight:400">資料庫複寫狀態</h2>
+  <button class="sm" onclick="loadRepl()">↻ 重新整理</button>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px">
+  <div id="repl-22" class="card repl-card"><div class="label">192.168.50.22</div><div class="repl-row">載入中…</div></div>
+  <div id="repl-23" class="card repl-card"><div class="label">192.168.50.23</div><div class="repl-row">載入中…</div></div>
+</div>
+
 <div class="summary-grid">
   <div class="card"><div class="label">已登記設備總數</div><div class="value" id="s_total">-</div></div>
   <div class="card"><div class="label">30 天內活躍</div><div class="value" id="s_30">-</div></div>
@@ -28,6 +37,67 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
+function renderReplNode(n, other) {
+  if (n.error) return `
+    <div class="label">${n.host}</div>
+    <div class="rc-status error">${n.label} 異常</div>
+    <div class="repl-details">
+      <div class="repl-row"><span class="dot red"></span>${n.error}</div>
+    </div>`;
+
+  const ioDot  = n.io_running  === 'Yes' ? 'green' : 'red';
+  const sqlDot = n.sql_running === 'Yes' ? 'green' : 'red';
+  const lagTag = n.seconds_behind === 0 ? 'tag-green' : n.seconds_behind < 30 ? 'tag-yellow' : 'tag-red';
+
+  // 交叉同步驗證：n 當主機，other 是跟上來了嗎？
+  let syncHtml = '';
+  if (other && !other.error && n.master_file) {
+    const sameFile = n.master_file === other.master_log_file;
+    const gap      = sameFile ? Math.max(n.master_pos - other.read_pos, 0) : null;
+    const gapTag   = gap === 0 ? 'tag-green' : gap === null ? 'tag-yellow' : 'tag-red';
+    const gapLabel = gap === null
+      ? '檔案不同（輪替中）'
+      : gap === 0 ? '已完全同步' : `落後 ${gap.toLocaleString()} bytes`;
+    syncHtml = `
+      <div class="repl-subhead">本機作為主機（被 ${other.label} 複寫）</div>
+      <div class="repl-row">本機 Binlog：${n.master_file} @ ${n.master_pos.toLocaleString()}</div>
+      <div class="repl-row">${other.label} 已讀至：${other.master_log_file} @ ${other.read_pos.toLocaleString()}</div>
+      <div class="repl-row">同步狀態：<span class="${gapTag}">${gapLabel}</span></div>`;
+  }
+
+  return `
+    <div class="label">${n.host}</div>
+    <div class="rc-status ${n.ok ? 'ok' : 'error'}">${n.label} &nbsp;${n.ok ? '正常' : '異常'}</div>
+    <div class="repl-details">
+      <div class="repl-subhead">本機作為從機（複寫自 ${n.master_host}）</div>
+      <div class="repl-row"><span class="dot ${ioDot}"></span>IO Thread：${n.io_running}
+        ${n.io_state ? `<span class="dim" style="margin-left:6px;font-size:.78rem">${n.io_state}</span>` : ''}</div>
+      <div class="repl-row"><span class="dot ${sqlDot}"></span>SQL Thread：${n.sql_running}</div>
+      <div class="repl-row">複寫延遲：<span class="${lagTag}">${n.seconds_behind} 秒</span></div>
+      <div class="repl-row">已複寫事件：${n.events_applied.toLocaleString()} 筆 &nbsp;<span class="dim">Relay Log ${n.relay_log_mb} MB</span></div>
+    </div>
+    ${syncHtml ? `<div class="repl-details" style="margin-top:10px">${syncHtml}</div>` : ''}`;
+}
+
+function loadRepl() {
+  fetch('/api/stats/replication').then(r => r.json()).then(nodes => {
+    nodes.sort((a, b) => a.host.localeCompare(b.host));
+    nodes.forEach((n, i) => {
+      const other = nodes[1 - i];
+      const el = document.getElementById('repl-' + n.host.split('.').pop());
+      if (!el) return;
+      el.className = 'card repl-card ' + (n.ok ? 'ok' : 'error');
+      el.innerHTML = renderReplNode(n, other);
+    });
+  }).catch(() => {
+    ['repl-22','repl-23'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.className = 'card repl-card error'; el.innerHTML = '<div class="repl-row">無法取得複寫狀態</div>'; }
+    });
+  });
+}
+loadRepl();
+
 fetch('/api/stats/summary').then(r => r.json()).then(d => {
   document.getElementById('s_total').textContent    = d.total.toLocaleString();
   document.getElementById('s_30').textContent       = d.active_30.toLocaleString();

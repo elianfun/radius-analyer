@@ -3,6 +3,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
 from app.utils import fix_row
+import os, paramiko
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dotenv import load_dotenv
+
+load_dotenv()
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -138,6 +143,91 @@ def delete_reject_records(db: Session = Depends(get_db)):
     db.execute(text("DELETE FROM radpostauth WHERE reply = 'Access-Reject'"))
     db.commit()
     return {"deleted": count}
+
+
+def _query_replication(host: str, label: str) -> dict:
+    ssh_user = os.getenv("SSH_USER", "root")
+    ssh_pass = os.getenv("SSH_PASSWORD", "")
+    db_pass  = os.getenv("DB_ROOT_PASSWORD", "")
+    node = {"host": host, "label": label, "error": None}
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(host, username=ssh_user, password=ssh_pass, timeout=10)
+        _, stdout, _ = client.exec_command(
+            f"mysql -u root -p{db_pass} --batch -e 'SHOW SLAVE STATUS' 2>/dev/null"
+            f" && echo '---MASTER---'"
+            f" && mysql -u root -p{db_pass} --batch -e 'SHOW MASTER STATUS' 2>/dev/null"
+        )
+        out = stdout.read().decode().strip()
+        client.close()
+
+        parts      = out.split("---MASTER---")
+        slave_out  = parts[0].strip()
+        master_out = parts[1].strip() if len(parts) > 1 else ""
+
+        if not slave_out:
+            node["error"] = "無 Slave 設定"
+            return node
+
+        lines   = slave_out.split("\n")
+        headers = lines[0].split("\t")
+        values  = lines[1].split("\t") if len(lines) > 1 else []
+        row     = dict(zip(headers, values))
+
+        # MASTER STATUS
+        node["master_file"] = ""
+        node["master_pos"]  = 0
+        if master_out:
+            ml = master_out.split("\n")
+            if len(ml) >= 2:
+                mrow = dict(zip(ml[0].split("\t"), ml[1].split("\t")))
+                node["master_file"] = mrow.get("File", "")
+                node["master_pos"]  = int(mrow.get("Position", 0) or 0)
+
+        lag_raw = row.get("Seconds_Behind_Master", "0")
+        lag = int(lag_raw) if lag_raw and lag_raw.isdigit() else 0
+        io_run  = row.get("Slave_IO_Running", "Unknown")
+        sql_run = row.get("Slave_SQL_Running", "Unknown")
+        last_err = row.get("Last_Error") or row.get("Last_IO_Error") or row.get("Last_SQL_Error") or ""
+
+        read_pos    = int(row.get("Read_Master_Log_Pos") or 0)
+        exec_pos    = int(row.get("Exec_Master_Log_Pos") or 0)
+        relay_bytes = int(row.get("Relay_Log_Space") or 0)
+        events      = int(row.get("Slave_Non_Transactional_Groups") or 0)
+
+        node.update({
+            "io_running":      io_run,
+            "sql_running":     sql_run,
+            "io_state":        row.get("Slave_IO_State", ""),
+            "seconds_behind":  lag,
+            "last_error":      last_err.strip(),
+            "master_host":     row.get("Master_Host", ""),
+            "master_log_file": row.get("Master_Log_File", ""),
+            "read_pos":        read_pos,
+            "exec_pos":        exec_pos,
+            "pending_events":  max(read_pos - exec_pos, 0),
+            "relay_log_mb":    round(relay_bytes / 1024 / 1024, 1),
+            "events_applied":  events,
+            "ok": io_run == "Yes" and sql_run == "Yes" and lag < 10,
+        })
+    except Exception as e:
+        node["error"] = str(e)
+    return node
+
+
+@router.get("/replication")
+def get_replication():
+    hosts = [
+        (os.getenv("SSH_HOST_1", "192.168.50.22"), ".22"),
+        (os.getenv("SSH_HOST_2", "192.168.50.23"), ".23"),
+    ]
+    results = [None, None]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {pool.submit(_query_replication, h, l): i for i, (h, l) in enumerate(hosts)}
+        for fut in as_completed(futures):
+            results[futures[fut]] = fut.result()
+    return results
 
 
 @router.get("/reject-hotspot")

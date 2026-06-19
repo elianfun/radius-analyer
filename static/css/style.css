@@ -94,3 +94,20 @@ code { font-family: monospace; background: #f0f4ff; padding: 1px 5px; border-rad
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+/* 複寫狀態 */
+.repl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+@media (max-width: 600px) { .repl-grid { grid-template-columns: 1fr; } }
+.repl-card { text-align: left; }
+.repl-card.ok    { border-top: 3px solid #2ab56e; }
+.repl-card.error { border-top: 3px solid #e14f6a; }
+.repl-card .rc-status { font-size: 1.5rem; font-weight: 700; margin: 6px 0 12px; }
+.repl-card .rc-status.ok    { color: #2ab56e; }
+.repl-card .rc-status.error { color: #e14f6a; }
+.repl-details { border-top: 1px solid #f0f0f0; padding-top: 10px; }
+.repl-row { font-size: .82rem; color: #555; margin-bottom: 4px; }
+.repl-subhead { font-size: .75rem; font-weight: 600; color: #aaa; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.dot.green { background: #2ab56e; }
+.dot.red   { background: #e14f6a; }
+.dot.gray  { background: #aaa; }
