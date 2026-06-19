@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>設備帳號管理</h1>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('inactive', this)">閒置設備</button>
+  <button class="tab" onclick="switchTab('never', this)">從未認證</button>
+  <button class="tab" onclick="switchTab('disabled', this)">已停用</button>
+  <button class="tab" onclick="switchTab('expired', this)">到期設備</button>
+  <button class="tab" onclick="switchTab('all', this)">全部設備</button>
+</div>
+
+<!-- 刪除確認框 -->
+<div id="deleteConfirm" class="confirm-box" style="display:none">
+  確定要刪除 <strong id="deleteTarget"></strong>？此操作無法復原。
+  <button class="danger" onclick="confirmDelete()">確定刪除</button>
+  <button onclick="document.getElementById('deleteConfirm').style.display='none'">取消</button>
+</div>
+
+<!-- 閒置設備 -->
+<div id="tab-inactive" class="tab-content">
+  <div class="toolbar">
+    <label>未認證天數：<input type="number" id="inactiveDays" value="90" min="1" style="width:70px"> 天</label>
+    <button onclick="loadInactive()">查詢</button>
+    <button class="danger" onclick="batchDelete('inactive')">批次刪除勾選</button>
+    <span id="cnt-inactive" class="badge"></span>
+  </div>
+  <table>
+    <thead><tr>
+      <th><input type="checkbox" onclick="toggleAll('inactive')"></th>
+      <th>MAC 位址</th><th>設備備註</th><th>群組</th><th>最後認證</th><th>成功</th><th>失敗</th><th>建立日期</th><th>操作</th>
+    </tr></thead>
+    <tbody id="body-inactive"></tbody>
+  </table>
+</div>
+
+<!-- 從未認證 -->
+<div id="tab-never" class="tab-content" style="display:none">
+  <div class="toolbar">
+    <button class="danger" onclick="batchDeleteAll('never')">刪除全部從未認證</button>
+    <span id="cnt-never" class="badge"></span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>MAC 位址</th><th>設備備註</th><th>群組</th><th>到期日</th><th>建立日期</th><th>操作</th>
+    </tr></thead>
+    <tbody id="body-never"></tbody>
+  </table>
+</div>
+
+<!-- 已停用 -->
+<div id="tab-disabled" class="tab-content" style="display:none">
+  <div class="toolbar"><span id="cnt-disabled" class="badge"></span></div>
+  <table>
+    <thead><tr>
+      <th>MAC 位址</th><th>設備備註</th><th>最後認證</th><th>成功次數</th><th>建立日期</th><th>操作</th>
+    </tr></thead>
+    <tbody id="body-disabled"></tbody>
+  </table>
+</div>
+
+<!-- 到期設備 -->
+<div id="tab-expired" class="tab-content" style="display:none">
+  <div class="toolbar"><span id="cnt-expired" class="badge"></span></div>
+  <table>
+    <thead><tr>
+      <th>MAC 位址</th><th>設備備註</th><th>群組</th><th>到期日</th><th>狀態</th><th>最後認證</th><th>操作</th>
+    </tr></thead>
+    <tbody id="body-expired"></tbody>
+  </table>
+</div>
+
+<!-- 全部設備 -->
+<div id="tab-all" class="tab-content" style="display:none">
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="搜尋 MAC / 備註 / 群組..." oninput="filterAll()"
+           style="width:240px;padding:6px 10px;border:1px solid #ccc;border-radius:4px">
+    <span id="cnt-all" class="badge"></span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>MAC 位址</th><th>設備備註</th><th>群組</th><th>最後認證</th><th>成功</th><th>失敗</th><th>建立日期</th><th>操作</th>
+    </tr></thead>
+    <tbody id="body-all"></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let pendingDelete = null;
+let allData = [];
+const expLabel = { expired: '已過期', expiring_soon: '即將到期', valid: '有效' };
+const expCls   = { expired: 'tag-red', expiring_soon: 'tag-yellow', valid: 'tag-green' };
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById(`tab-${name}`).style.display = '';
+  btn.classList.add('active');
+  const loaders = { inactive: loadInactive, never: loadNever, disabled: loadDisabled, expired: loadExpired, all: loadAll };
+  loaders[name]();
+}
+
+function fmt(dt) { return dt ? dt.substring(0,16).replace('T',' ') : '<span class="dim">-</span>'; }
+function fmtDate(dt) { return dt ? dt.substring(0,10) : '-'; }
+
+function row(r, fields) {
+  return `<tr data-mac="${r.mac}">` + fields.map(f => `<td>${f}</td>`).join('') + `</tr>`;
+}
+
+function macCell(mac) {
+  return `<code>${mac}</code>`;
+}
+
+function askDelete(mac) {
+  pendingDelete = mac;
+  document.getElementById('deleteTarget').textContent = mac;
+  document.getElementById('deleteConfirm').style.display = 'flex';
+}
+
+function confirmDelete() {
+  fetch(`/api/accounts/${encodeURIComponent(pendingDelete)}`, { method: 'DELETE' })
+    .then(r => r.json()).then(() => {
+      document.getElementById('deleteConfirm').style.display = 'none';
+      document.querySelectorAll(`tr[data-mac="${pendingDelete}"]`).forEach(r => r.remove());
+    });
+}
+
+function toggleAll(name) {
+  const checked = event.target.checked;
+  document.querySelectorAll(`#tab-${name} .row-check`).forEach(cb => cb.checked = checked);
+}
+
+function batchDelete(name) {
+  const selected = [...document.querySelectorAll(`#tab-${name} .row-check:checked`)].map(cb => cb.value);
+  if (!selected.length) return alert('請先勾選設備');
+  if (!confirm(`確定刪除 ${selected.length} 台設備？`)) return;
+  Promise.all(selected.map(m => fetch(`/api/accounts/${encodeURIComponent(m)}`, { method: 'DELETE' })))
+    .then(() => { if (name === 'inactive') loadInactive(); });
+}
+
+function batchDeleteAll(name) {
+  const macs = [...document.querySelectorAll(`#tab-${name} tr[data-mac]`)].map(r => r.dataset.mac);
+  if (!macs.length) return;
+  if (!confirm(`確定刪除全部 ${macs.length} 台設備？`)) return;
+  Promise.all(macs.map(m => fetch(`/api/accounts/${encodeURIComponent(m)}`, { method: 'DELETE' })))
+    .then(() => loadNever());
+}
+
+function delBtn(mac) {
+  return `<button class="danger sm" onclick="askDelete('${mac}')">刪除</button>`;
+}
+
+function loadInactive() {
+  const days = document.getElementById('inactiveDays').value;
+  fetch(`/api/accounts/inactive?days=${days}`).then(r => r.json()).then(data => {
+    document.getElementById('cnt-inactive').textContent = `共 ${data.length} 筆`;
+    document.getElementById('body-inactive').innerHTML = data.map(r => `
+      <tr data-mac="${r.mac}">
+        <td><input type="checkbox" class="row-check" value="${r.mac}"></td>
+        <td>${macCell(r.mac)}</td>
+        <td>${r.description || ''}</td>
+        <td><span class="group-tag">${r.groupname || '-'}</span></td>
+        <td>${fmt(r.last_accept)}</td>
+        <td>${r.accept_count ?? 0}</td>
+        <td class="${(r.reject_count??0) > 10 ? 'warn-text' : ''}">${r.reject_count ?? 0}</td>
+        <td>${fmtDate(r.creationdate)}</td>
+        <td>${delBtn(r.mac)}</td>
+      </tr>`).join('');
+  });
+}
+
+function loadNever() {
+  fetch('/api/accounts/never').then(r => r.json()).then(data => {
+    document.getElementById('cnt-never').textContent = `共 ${data.length} 筆`;
+    document.getElementById('body-never').innerHTML = data.map(r => `
+      <tr data-mac="${r.mac}">
+        <td>${macCell(r.mac)}</td>
+        <td>${r.description || ''}</td>
+        <td><span class="group-tag">${r.groupname || '-'}</span></td>
+        <td>${r.expiration || '-'}</td>
+        <td>${fmtDate(r.creationdate)}</td>
+        <td>${delBtn(r.mac)}</td>
+      </tr>`).join('');
+  });
+}
+
+function loadDisabled() {
+  fetch('/api/accounts/disabled').then(r => r.json()).then(data => {
+    document.getElementById('cnt-disabled').textContent = `共 ${data.length} 筆`;
+    document.getElementById('body-disabled').innerHTML = data.map(r => `
+      <tr data-mac="${r.mac}">
+        <td>${macCell(r.mac)}</td>
+        <td>${r.description || ''}</td>
+        <td>${fmt(r.last_accept)}</td>
+        <td>${r.accept_count ?? 0}</td>
+        <td>${fmtDate(r.creationdate)}</td>
+        <td>${delBtn(r.mac)}</td>
+      </tr>`).join('');
+  });
+}
+
+function loadExpired() {
+  fetch('/api/accounts/expired').then(r => r.json()).then(data => {
+    document.getElementById('cnt-expired').textContent = `共 ${data.length} 筆`;
+    document.getElementById('body-expired').innerHTML = data.map(r => `
+      <tr data-mac="${r.mac}">
+        <td>${macCell(r.mac)}</td>
+        <td>${r.description || ''}</td>
+        <td><span class="group-tag">${r.groupname || '-'}</span></td>
+        <td>${r.expiration || '-'}</td>
+        <td><span class="${expCls[r.exp_status]}">${expLabel[r.exp_status]}</span></td>
+        <td>${fmt(r.last_accept)}</td>
+        <td>${delBtn(r.mac)}</td>
+      </tr>`).join('');
+  });
+}
+
+function loadAll() {
+  fetch('/api/accounts/').then(r => r.json()).then(data => {
+    allData = data;
+    document.getElementById('cnt-all').textContent = `共 ${data.length} 筆`;
+    renderAll(data);
+  });
+}
+
+function renderAll(data) {
+  document.getElementById('body-all').innerHTML = data.map(r => `
+    <tr data-mac="${r.mac}">
+      <td>${macCell(r.mac)}</td>
+      <td>${r.description || ''}</td>
+      <td><span class="group-tag">${r.groupname || '-'}</span></td>
+      <td>${fmt(r.last_accept)}</td>
+      <td>${r.accept_count ?? 0}</td>
+      <td class="${(r.reject_count??0) > 10 ? 'warn-text' : ''}">${r.reject_count ?? 0}</td>
+      <td>${fmtDate(r.creationdate)}</td>
+      <td>${delBtn(r.mac)}</td>
+    </tr>`).join('');
+}
+
+function filterAll() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  renderAll(allData.filter(r =>
+    r.mac.toLowerCase().includes(q) ||
+    (r.description && r.description.toLowerCase().includes(q)) ||
+    (r.groupname   && r.groupname.toLowerCase().includes(q))
+  ));
+}
+
+loadInactive();
+</script>
+{% endblock %}

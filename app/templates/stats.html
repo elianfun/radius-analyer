@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>認證統計</h1>
+
+<div class="section">
+  <h2>認證最頻繁的設備（前 20）</h2>
+  <table>
+    <thead><tr><th>#</th><th>MAC 位址</th><th>設備備註</th><th>群組</th><th>成功</th><th>失敗</th><th>失敗率</th><th>最後認證</th></tr></thead>
+    <tbody id="topBody"></tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>近期拒絕次數最多（可能設定異常）</h2>
+  <div class="toolbar">
+    <label>近 <select id="rejectDays" onchange="loadRejects()">
+      <option value="7" selected>7 天</option>
+      <option value="14">14 天</option>
+      <option value="30">30 天</option>
+    </select> 天</label>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>MAC 位址</th><th>拒絕次數</th><th>最後嘗試</th></tr></thead>
+    <tbody id="rejectBody"></tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>每日認證趨勢</h2>
+  <label>天數：
+    <select id="dayRange" onchange="loadChart()">
+      <option value="7">7 天</option>
+      <option value="30" selected>30 天</option>
+      <option value="90">90 天</option>
+      <option value="180">180 天</option>
+    </select>
+  </label>
+  <canvas id="dailyChart" style="margin-top:12px"></canvas>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let chart;
+
+fetch('/api/stats/top-devices').then(r => r.json()).then(data => {
+  document.getElementById('topBody').innerHTML = data.map((r,i) => {
+    const total = (r.accept_count||0) + (r.reject_count||0);
+    const failRate = total ? ((r.reject_count/total)*100).toFixed(1)+'%' : '-';
+    return `<tr>
+      <td>${i+1}</td>
+      <td><code>${r.mac}</code></td>
+      <td>${r.description || ''}</td>
+      <td><span class="group-tag">${r.groupname || '-'}</span></td>
+      <td>${r.accept_count?.toLocaleString() ?? 0}</td>
+      <td class="${r.reject_count > 100 ? 'warn-text' : ''}">${r.reject_count?.toLocaleString() ?? 0}</td>
+      <td>${failRate}</td>
+      <td>${r.last_accept ? r.last_accept.substring(0,16).replace('T',' ') : '-'}</td>
+    </tr>`;
+  }).join('');
+});
+
+function loadRejects() {
+  const days = document.getElementById('rejectDays').value;
+  fetch(`/api/stats/reject-hotspot?days=${days}`).then(r => r.json()).then(data => {
+    document.getElementById('rejectBody').innerHTML = data.map((r,i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td><code>${r.mac}</code></td>
+        <td class="warn-text">${r.reject_count.toLocaleString()}</td>
+        <td>${r.last_attempt ? r.last_attempt.substring(0,16).replace('T',' ') : '-'}</td>
+      </tr>`).join('');
+  });
+}
+
+function loadChart() {
+  const days = document.getElementById('dayRange').value;
+  fetch(`/api/stats/daily?days=${days}`).then(r => r.json()).then(data => {
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('dailyChart'), {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.date),
+        datasets: [
+          { label: 'Accept', data: data.map(d => d.accept), backgroundColor: '#4f80e1', stack: 'a' },
+          { label: 'Reject', data: data.map(d => d.reject), backgroundColor: '#e14f6a', stack: 'a' },
+          { label: '不重複設備', data: data.map(d => d.unique_devices),
+            type: 'line', borderColor: '#2ab56e', backgroundColor: 'transparent', yAxisID: 'y1' }
+        ]
+      },
+      options: { responsive: true, scales: {
+        y:  { beginAtZero: true, stacked: true },
+        y1: { beginAtZero: true, position: 'right' }
+      }}
+    });
+  });
+}
+
+loadRejects();
+loadChart();
+</script>
+{% endblock %}

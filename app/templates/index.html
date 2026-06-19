@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>RADIUS MAB 管理系統</h1>
+
+<div class="summary-grid">
+  <div class="card"><div class="label">已登記設備總數</div><div class="value" id="s_total">-</div></div>
+  <div class="card"><div class="label">30 天內活躍</div><div class="value" id="s_30">-</div></div>
+  <div class="card"><div class="label">90 天內活躍</div><div class="value" id="s_90">-</div></div>
+  <div class="card warn"><div class="label">90 天未認證</div><div class="value" id="s_inactive">-</div></div>
+  <div class="card warn"><div class="label">從未認證</div><div class="value" id="s_never">-</div></div>
+  <div class="card warn"><div class="label">已停用</div><div class="value" id="s_disabled">-</div></div>
+  <div class="card info"><div class="label">累計 Accept</div><div class="value small" id="s_accept">-</div></div>
+  <div class="card danger-card"><div class="label">累計 Reject</div><div class="value small" id="s_reject">-</div></div>
+</div>
+
+<div class="grid2">
+  <div class="section">
+    <h2>每日認證趨勢（近 30 天）</h2>
+    <canvas id="dailyChart"></canvas>
+  </div>
+  <div class="section">
+    <h2>群組設備分布</h2>
+    <canvas id="groupChart"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+fetch('/api/stats/summary').then(r => r.json()).then(d => {
+  document.getElementById('s_total').textContent    = d.total.toLocaleString();
+  document.getElementById('s_30').textContent       = d.active_30.toLocaleString();
+  document.getElementById('s_90').textContent       = d.active_90.toLocaleString();
+  document.getElementById('s_inactive').textContent = d.inactive_90.toLocaleString();
+  document.getElementById('s_never').textContent    = d.never.toLocaleString();
+  document.getElementById('s_disabled').textContent = d.disabled.toLocaleString();
+  document.getElementById('s_accept').textContent   = d.total_accept.toLocaleString();
+  document.getElementById('s_reject').textContent   = d.total_reject.toLocaleString();
+});
+
+fetch('/api/stats/daily').then(r => r.json()).then(data => {
+  new Chart(document.getElementById('dailyChart'), {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [
+        { label: 'Accept', data: data.map(d => d.accept), backgroundColor: '#4f80e1', stack: 'a' },
+        { label: 'Reject', data: data.map(d => d.reject), backgroundColor: '#e14f6a', stack: 'a' },
+        { label: '不重複設備', data: data.map(d => d.unique_devices),
+          type: 'line', borderColor: '#2ab56e', backgroundColor: 'transparent', yAxisID: 'y1' }
+      ]
+    },
+    options: { responsive: true, scales: {
+      y:  { beginAtZero: true, stacked: true },
+      y1: { beginAtZero: true, position: 'right' }
+    }}
+  });
+});
+
+fetch('/api/stats/by-group').then(r => r.json()).then(data => {
+  new Chart(document.getElementById('groupChart'), {
+    type: 'doughnut',
+    data: {
+      labels: data.map(d => `${d.groupname} (${d.total})`),
+      datasets: [{ data: data.map(d => d.total),
+        backgroundColor: ['#4f80e1','#2ab56e','#f5a623','#e14f6a','#9b59b6','#1abc9c','#e67e22','#95a5a6'] }]
+    },
+    options: { responsive: true, plugins: { legend: { position: 'right' } } }
+  });
+});
+</script>
+{% endblock %}
