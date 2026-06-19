@@ -92,19 +92,24 @@ def get_by_group(db: Session = Depends(get_db)):
 def get_top_devices(limit: int = 20, db: Session = Depends(get_db)):
     """認證最頻繁的設備（只統計 Accept）"""
     result = db.execute(text("""
+        WITH top AS (
+            SELECT username, COUNT(*) AS accept_count, MAX(authdate) AS last_accept
+            FROM radpostauth
+            WHERE reply = 'Access-Accept'
+            GROUP BY username
+            ORDER BY accept_count DESC
+            LIMIT :lim
+        )
         SELECT
-            rp.username                AS mac,
+            t.username AS mac,
             CONVERT(CONVERT(ui.firstname USING binary) USING utf8mb4) AS description,
             ug.groupname,
-            COUNT(*)                   AS accept_count,
-            MAX(rp.authdate)           AS last_accept
-        FROM radpostauth rp
-        LEFT JOIN userinfo    ui ON rp.username = ui.username
-        LEFT JOIN radusergroup ug ON rp.username = ug.username
-        WHERE rp.reply = 'Access-Accept'
-        GROUP BY rp.username, ui.firstname, ug.groupname
-        ORDER BY accept_count DESC
-        LIMIT :lim
+            t.accept_count,
+            t.last_accept
+        FROM top t
+        LEFT JOIN userinfo    ui ON t.username = ui.username
+        LEFT JOIN radusergroup ug ON t.username = ug.username
+        ORDER BY t.accept_count DESC
     """), {"lim": limit})
     return [fix_row(dict(r)) for r in result.mappings().all()]
 
