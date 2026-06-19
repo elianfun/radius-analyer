@@ -18,6 +18,8 @@
       <option value="14">14 天</option>
       <option value="30">30 天</option>
     </select> 天</label>
+    <button class="danger" onclick="clearRejectRecords()">清除全部 Access-Reject 紀錄</button>
+    <span id="clearMsg" style="margin-left:10px;color:#2ab56e;display:none"></span>
   </div>
   <table>
     <thead><tr><th>#</th><th>MAC 位址</th><th>拒絕次數</th><th>最後嘗試</th></tr></thead>
@@ -95,6 +97,18 @@ function loadChart() {
       }}
     });
   });
+}
+
+function clearRejectRecords() {
+  if (!confirm('確定要刪除 radpostauth 中所有 Access-Reject 紀錄嗎？\n此操作無法復原。')) return;
+  fetch('/api/stats/reject-records', { method: 'DELETE' })
+    .then(r => r.json())
+    .then(data => {
+      const msg = document.getElementById('clearMsg');
+      msg.textContent = `已刪除 ${data.deleted.toLocaleString()} 筆`;
+      msg.style.display = 'inline';
+      loadRejects();
+    });
 }
 
 loadRejects();

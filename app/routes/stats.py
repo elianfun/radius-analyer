@@ -131,6 +131,15 @@ def get_daily(days: int = 30, db: Session = Depends(get_db)):
     return [dict(r) for r in result.mappings().all()]
 
 
+@router.delete("/reject-records")
+def delete_reject_records(db: Session = Depends(get_db)):
+    """刪除 radpostauth 中所有 Access-Reject 紀錄"""
+    count = db.execute(text("SELECT COUNT(*) FROM radpostauth WHERE reply = 'Access-Reject'")).scalar()
+    db.execute(text("DELETE FROM radpostauth WHERE reply = 'Access-Reject'"))
+    db.commit()
+    return {"deleted": count}
+
+
 @router.get("/reject-hotspot")
 def get_reject_hotspot(days: int = 7, limit: int = 20, db: Session = Depends(get_db)):
     """近 N 天拒絕最多的 MAC（先用時間過濾縮小資料量）"""
