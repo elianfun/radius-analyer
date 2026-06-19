@@ -128,7 +128,7 @@ def delete_account(mac: str, db: Session = Depends(get_db)):
     ).fetchone()
     if not check:
         raise HTTPException(status_code=404, detail="設備不存在")
-    for table in ("radcheck", "radreply", "radusergroup", "userinfo"):
+    for table in ("radcheck", "radreply", "radusergroup", "userinfo", "radpostauth"):
         db.execute(text(f"DELETE FROM {table} WHERE username = :u"), {"u": mac})
     db.commit()
     return {"deleted": mac}
