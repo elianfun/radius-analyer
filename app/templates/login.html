@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RADIUS 管理系統 - 登入</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+  body { display:flex; justify-content:center; align-items:center; min-height:100vh; background:#f0f2f5; margin:0; }
+  .login-card { background:#fff; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.1); width:340px; }
+  .login-card h1 { font-size:1.3rem; margin:0 0 6px; color:#1a2332; }
+  .login-card p  { color:#888; font-size:.88rem; margin:0 0 28px; }
+  .form-group { margin-bottom:16px; }
+  .form-group label { display:block; font-size:.83rem; color:#555; margin-bottom:5px; }
+  .form-group input { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; font-size:.95rem; box-sizing:border-box; }
+  .form-group input:focus { outline:none; border-color:#4f80e1; }
+  .btn-login { width:100%; padding:11px; background:#4f80e1; color:#fff; border:none; border-radius:6px; font-size:1rem; cursor:pointer; margin-top:4px; }
+  .btn-login:hover { background:#3a6bc8; }
+  .error { color:#e14f6a; font-size:.86rem; margin-bottom:16px; padding:10px 12px; background:#fff0f3; border-radius:6px; border-left:3px solid #e14f6a; }
+</style>
+</head>
+<body>
+<div class="login-card">
+  <h1>RADIUS MAB 管理系統</h1>
+  <p>請輸入帳號密碼繼續</p>
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/login">
+    <div class="form-group">
+      <label>帳號</label>
+      <input type="text" name="username" autocomplete="username" autofocus required>
+    </div>
+    <div class="form-group">
+      <label>密碼</label>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn-login">登入</button>
+  </form>
+</div>
+</body>
+</html>
