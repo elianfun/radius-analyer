@@ -146,18 +146,22 @@ def delete_reject_records(db: Session = Depends(get_db)):
 
 
 def _query_replication(host: str, label: str) -> dict:
-    ssh_user = os.getenv("SSH_USER", "root")
-    ssh_pass = os.getenv("SSH_PASSWORD", "")
-    db_pass  = os.getenv("DB_ROOT_PASSWORD", "")
+    ssh_user    = os.getenv("SSH_USER", "root")
+    ssh_key     = os.getenv("SSH_KEY_FILE", os.path.expanduser("~/.ssh/id_ed25519"))
+    ssh_pass    = os.getenv("SSH_PASSWORD", "") or None
+    db_pass     = os.getenv("DB_ROOT_PASSWORD", "")
     node = {"host": host, "label": label, "error": None}
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(host, username=ssh_user, password=ssh_pass, timeout=10)
+        if os.path.exists(ssh_key):
+            client.connect(host, username=ssh_user, key_filename=ssh_key, timeout=10)
+        else:
+            client.connect(host, username=ssh_user, password=ssh_pass, timeout=10)
         _, stdout, _ = client.exec_command(
-            f"mysql -u root -p{db_pass} --batch -e 'SHOW SLAVE STATUS' 2>/dev/null"
+            f"mysql -u root -p{db_pass} --batch -e 'SHOW REPLICA STATUS' 2>/dev/null"
             f" && echo '---MASTER---'"
-            f" && mysql -u root -p{db_pass} --batch -e 'SHOW MASTER STATUS' 2>/dev/null"
+            f" && mysql -u root -p{db_pass} --batch -e 'SHOW BINLOG STATUS' 2>/dev/null"
         )
         out = stdout.read().decode().strip()
         client.close()
@@ -167,7 +171,7 @@ def _query_replication(host: str, label: str) -> dict:
         master_out = parts[1].strip() if len(parts) > 1 else ""
 
         if not slave_out:
-            node["error"] = "無 Slave 設定"
+            node["error"] = "無 Replica 設定"
             return node
 
         lines   = slave_out.split("\n")

@@ -61,6 +61,73 @@ uvicorn app.main:app --host 0.0.0.0 --port 8002
 
 瀏覽器開啟 `http://localhost:8002`
 
+## 部署到 Linux（Ubuntu 24.04）
+
+建議直接裝在 DB 主機上，本機連線效能最佳，多台部署亦可備援。
+
+### 1. 安裝環境
+
+```bash
+apt install -y git python3-venv
+git clone https://github.com/elianfun/radius-analyer.git /opt/radius-analyer
+cd /opt/radius-analyer
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+cp .env.example .env
+# 編輯 .env，DB_HOST 設為 localhost
+```
+
+### 2. 資料庫授權
+
+PyMySQL 連 `localhost` 時走 TCP（`127.0.0.1`），MariaDB 預設的 `radius@localhost` 僅允許 Unix socket，需額外補授權：
+
+```bash
+mysql -u root -p -e "GRANT ALL PRIVILEGES ON radius.* TO 'radius'@'127.0.0.1' IDENTIFIED BY 'your_password'; FLUSH PRIVILEGES;"
+```
+
+### 3. 複寫狀態 SSH 金鑰設定
+
+複寫狀態功能透過 Paramiko 以 SSH key 連進 DB 主機執行查詢。若部署多台，每台需能 SSH 到自己與其他台：
+
+```bash
+# 在每台 DB 主機上產生 key（若尚未存在）
+ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ''
+
+# 將本機 public key 加入自己的 authorized_keys
+cat /root/.ssh/id_ed25519.pub >> /root/.ssh/authorized_keys
+
+# 將本機 public key 複製到其他台的 authorized_keys
+# （或反向：將其他台的 public key 貼到本機的 authorized_keys）
+ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<other-host>
+```
+
+`stats.py` 的 `_query_replication` 會優先使用 `SSH_KEY_FILE`（預設 `~/.ssh/id_ed25519`），找不到才 fallback 到 `SSH_PASSWORD`。
+
+### 4. systemd 服務
+
+```bash
+cat > /etc/systemd/system/radius-analyer.service << 'EOF'
+[Unit]
+Description=RADIUS Analyzer Web UI
+After=network.target mariadb.service
+
+[Service]
+WorkingDirectory=/opt/radius-analyer
+ExecStart=/opt/radius-analyer/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8002
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable radius-analyer
+systemctl start radius-analyer
+```
+
+瀏覽器開啟 `http://<server-ip>:8002`
+
 ## 技術架構
 
 | 元件 | 說明 |
