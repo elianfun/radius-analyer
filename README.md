@@ -45,12 +45,19 @@ DB_PASSWORD=your_password
 DB_NAME=radius
 INACTIVE_DAYS=90
 
-# 複寫狀態功能（SSH 進 DB 主機執行 SHOW SLAVE/MASTER STATUS）
+# 複寫狀態功能（SSH 進 DB 主機執行 SHOW REPLICA/BINLOG STATUS）
 SSH_HOST_1=192.168.50.22
 SSH_HOST_2=192.168.50.23
 SSH_USER=root
+SSH_KEY_FILE=~/.ssh/id_ed25519   # 優先使用 key；找不到才 fallback 到 SSH_PASSWORD
 SSH_PASSWORD=your_ssh_password
 DB_ROOT_PASSWORD=your_db_root_password
+
+# 網頁登入認證
+WEB_USER=admin
+WEB_PASSWORD=your_web_password
+SECRET_KEY=your_random_secret_key   # 用 python -c "import secrets; print(secrets.token_hex(32))" 產生
+SESSION_TIMEOUT=1800                # 閒置逾時秒數（預設 30 分鐘）
 ```
 
 ## 啟動
@@ -128,6 +135,17 @@ systemctl start radius-analyer
 
 瀏覽器開啟 `http://<server-ip>:8002`
 
+## 網頁認證
+
+登入後 session 儲存於加密 cookie，閒置超過 `SESSION_TIMEOUT` 秒自動登出。導覽列有登出按鈕可主動結束 session。
+
+**變更密碼：**
+
+```bash
+nano /opt/radius-analyer/.env   # 修改 WEB_USER / WEB_PASSWORD
+systemctl restart radius-analyer
+```
+
 ## 技術架構
 
 | 元件 | 說明 |
@@ -136,6 +154,7 @@ systemctl start radius-analyer
 | Jinja2 | HTML 模板 |
 | SQLAlchemy + PyMySQL | 資料庫連線 |
 | Paramiko | SSH 連線（複寫狀態查詢） |
+| itsdangerous | Session cookie 簽署 |
 | Chart.js | 圖表 |
 
 ## 資料庫索引
