@@ -157,6 +157,36 @@ systemctl restart radius-analyer
 | itsdangerous | Session cookie 簽署 |
 | Chart.js | 圖表 |
 
+## 雙主複寫設定
+
+兩台 MariaDB 互為主從（dual-master），需設定 `auto_increment_offset` 讓各自產生不重疊的 ID，避免同時新增時發生主鍵衝突。
+
+| 伺服器 | offset | increment | 產生的 ID |
+|--------|--------|-----------|-----------|
+| 192.168.50.22 | 1 | 2 | 奇數（1, 3, 5 …） |
+| 192.168.50.23 | 2 | 2 | 偶數（2, 4, 6 …） |
+
+寫入 `/etc/mysql/mariadb.conf.d/50-server.cnf`：
+
+```ini
+# .22
+auto_increment_increment = 2
+auto_increment_offset    = 1
+
+# .23
+auto_increment_increment = 2
+auto_increment_offset    = 2
+```
+
+套用（不需重啟）：
+
+```sql
+SET GLOBAL auto_increment_increment = 2;
+SET GLOBAL auto_increment_offset    = 1;   -- .23 改為 2
+```
+
+> **注意**：直接在單台 DB 手動 INSERT（不經由 daloRADIUS）時，若未先確認該台的 AUTO_INCREMENT 現值，仍有機率拿到與對方重疊的 ID 造成複寫中斷。請盡量透過 daloRADIUS 操作資料。
+
 ## 資料庫索引
 
 `radpostauth` 為主要效能瓶頸（MAB 環境下資料成長快速），已建立以下索引：
