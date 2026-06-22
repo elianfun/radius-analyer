@@ -78,7 +78,8 @@ canvas { max-height: 300px; }
 select { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; }
 
 .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
-.tab { padding: 8px 20px; border: 1px solid #ccc; border-radius: 6px 6px 0 0; background: #f0f4ff; cursor: pointer; }
+.tab { padding: 8px 20px; border: 1px solid #ccc; border-radius: 6px 6px 0 0; background: #f0f4ff; cursor: pointer; color: #555; }
+.tab:hover { background: #e4ebff; color: #1e2d4e; }
 .tab.active { background: #fff; border-bottom-color: #fff; font-weight: 600; color: #1e2d4e; }
 
 .group-tag { background: #e8effe; color: #3a6bcf; padding: 2px 8px; border-radius: 10px; font-size: .8rem; }
